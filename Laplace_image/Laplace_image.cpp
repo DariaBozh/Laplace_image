@@ -8,6 +8,9 @@ Laplace_image::Laplace_image(QWidget *parent)
     scene = new QGraphicsScene(this);
     ui.graphicsView->setScene(scene);
     pixmapItem = scene->addPixmap(QPixmap());
+
+    ui.tbRemove->setEnabled(false);
+    ui.tbRestore->setEnabled(false);
 }
 
 Laplace_image::~Laplace_image()
@@ -37,14 +40,13 @@ void Laplace_image::load(double* u, std::string filename, int* height, int* widt
 
 void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
 {
-    int n = range * p / 100;
+    int n = range * p / 100; // number of pixels to DAMAGE
+    std::uniform_int_distribution<int> dist(0, range - 1); //generate a random number in this range
 
     //If p > 50, we kipping heigth*width-n pixels
     if (p >= 50) {
         int s = 0;
-        while (s < (range - n)) {
-            //Generate a random number in the range [0, heigth*width-1]
-            std::uniform_int_distribution<int> dist(0, range - 1);
+        while (s < range - n) {
             int keep = dist(rng);
 
             //Selection for the first time
@@ -63,18 +65,17 @@ void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
     else if (p < 50) {
         int s = 0;
         while (s < n) {
-            std::uniform_int_distribution<int> dist(0, range - 1);
             int keep = dist(rng);
 
             if (Mask[keep] == 3) {
                 Mask[keep] = 0;
+                u[keep] = 0.;
                 s += 1;
             }
         }
         for (int k = 0; k < range; k++) {
             if (Mask[k] == 3) {
                 Mask[k] = 1;
-                u[k] = 1.; 
             }
         }
     }
@@ -82,7 +83,7 @@ void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
 }
 void Laplace_image::restore(int* Mask, double* u, int height, int width)
 {
-    Eigen::SparseMatrix<double, Eigen::RowMajor> M(height * width, height * width);
+    Eigen::SparseMatrix<double> M(height * width, height * width); //column major as the default
     Eigen::VectorXd b = Eigen::VectorXd::Zero(height * width);
     Eigen::VectorXd xs(height * width);
 
@@ -148,9 +149,9 @@ void Laplace_image::restore(int* Mask, double* u, int height, int width)
             //bottom edge
             else if (i == 0 && j >= 1 && j <= width - 2) {
                 M.insert(k, k) = 4.;
-                M.insert(k, k - width) = -1.;
-                M.insert(k, k + width) = -1.;
-                M.insert(k, k + 1) = -2.;
+                M.insert(k, k + width) = -2.;
+                M.insert(k, k + 1) = -1.;
+                M.insert(k, k - 1) = -1.;
             }
             //inside the domain
             else {
@@ -170,7 +171,7 @@ void Laplace_image::restore(int* Mask, double* u, int height, int width)
 
     //Solve the system
     M.makeCompressed();
-    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver; //requires a column-major matrix
     solver.analyzePattern(M);
     solver.factorize(M);
 
@@ -190,10 +191,23 @@ void Laplace_image::restore(int* Mask, double* u, int height, int width)
     }
 }
 
+void Laplace_image::refreshDisplay()
+{
+    for (int j = 0; j < height; ++j) {
+        for (int i = 0; i < width; ++i) {
+            int k = j * width + i;
+            int qt_y = (height - 1) - j;
+            int v = std::clamp(static_cast<int>(std::round(u[k])), 0, 255);
+            currentImage.setPixel(i, qt_y, qRgb(v, v, v));
+        }
+    }
+    pixmapItem->setPixmap(QPixmap::fromImage(currentImage));
+}
+
 void Laplace_image::on_actionOpen_triggered()
 {
     QString fileFilter = "Image data (*.jpg *.jpeg *.png *.pgm)";
-    QString fileName = QFileDialog::getOpenFileName(this, "Load image", fileFilter);
+    QString fileName = QFileDialog::getOpenFileName(this, "Load image", "", fileFilter);
     if (fileName.isEmpty()) { 
         QMessageBox::information(this, "Action Canceled", "No image was selected.");
         return; 
@@ -215,6 +229,8 @@ void Laplace_image::on_actionOpen_triggered()
     load(u.data(), fileName.toStdString(), &height, &width);
 
     QMessageBox::information(this, "Success", "Image successfully loaded and processed!");
+    ui.tbRemove->setEnabled(true);
+    ui.tbRestore->setEnabled(false);
 }
 void Laplace_image::on_actionSave_triggered()
 {
@@ -224,11 +240,21 @@ void Laplace_image::on_actionSave_triggered()
 }
 void Laplace_image::on_tbRemove_clicked()
 {
+    ui.tbRestore->setEnabled(true);
+
+    // Reload original pixels and reset the mask before damaging again
+    load(u.data(), "", &height, &width);
+    std::fill(Mask.begin(), Mask.end(), 3);
+
     int percent = ui.sbPercent->value();
     randomlyRemove(Mask.data(), u.data(), range, percent);
+    refreshDisplay();
 }
 void Laplace_image::on_tbRestore_clicked()
 {
+    ui.tbRemove->setEnabled(true);
+
     restore(Mask.data(), u.data(), height, width);
+    refreshDisplay();
 }
 

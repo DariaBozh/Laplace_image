@@ -105,12 +105,8 @@
     <QtRcc Include="Laplace_image.qrc" />
     <QtUic Include="Laplace_image.ui" />
     <QtMoc Include="Laplace_image.h" />
-    <ClCompile Include="LaplaceSolver.cpp" />
     <ClCompile Include="Laplace_image.cpp" />
     <ClCompile Include="main.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="LaplaceSolver.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

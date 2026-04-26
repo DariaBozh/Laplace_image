@@ -22,14 +22,14 @@ public:
 
     void restore(int* Mask, double* u, int height, int width);
 
+    void refreshDisplay();
+
 private:
     Ui::Laplace_imageClass ui;
 
     QGraphicsScene* scene;
     QImage currentImage; //calculations (bytes)
     QGraphicsPixmapItem* pixmapItem; //rendering
-
-    static std::mt19937 rng;
 
     int height = 0;
     int width = 0;
