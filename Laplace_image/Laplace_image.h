@@ -18,21 +18,29 @@ public:
     ~Laplace_image();
 
     void load(double* u, std::string filename, int* height, int* width);
-    void RandomlyRemove(int* Mask, double* u, int range, int p);
+    void randomlyRemove(int* Mask, double* u, int range, int p);
 
-    void restoration(int* Mask, double* u, int height, int width);
-
-    void on_actionOpen_triggered();
-    void on_actionSave_triggered();
+    void restore(int* Mask, double* u, int height, int width);
 
 private:
     Ui::Laplace_imageClass ui;
 
     QGraphicsScene* scene;
-    QImage currentImage;
+    QImage currentImage; //calculations (bytes)
+    QGraphicsPixmapItem* pixmapItem; //rendering
 
     static std::mt19937 rng;
 
-    double* u[]; 
-};
+    int height = 0;
+    int width = 0;
+    int range = 0; // height*width
 
+    std::vector<double> u;
+    std::vector<int> Mask;
+
+public slots:
+    void on_actionOpen_triggered();
+    void on_actionSave_triggered();
+    void on_tbRemove_clicked();
+    void on_tbRestore_clicked();
+};

@@ -45,14 +45,14 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pbRemove">
+           <widget class="QToolButton" name="tbRemove">
             <property name="text">
              <string>Poskodit</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pbRestore">
+           <widget class="QToolButton" name="tbRestore">
             <property name="text">
              <string>Zrekonstruovat</string>
             </property>

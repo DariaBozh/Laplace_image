@@ -6,6 +6,8 @@ Laplace_image::Laplace_image(QWidget *parent)
     ui.setupUi(this);
 
     scene = new QGraphicsScene(this);
+    ui.graphicsView->setScene(scene);
+    pixmapItem = scene->addPixmap(QPixmap());
 }
 
 Laplace_image::~Laplace_image()
@@ -17,25 +19,37 @@ void Laplace_image::load(double* u, std::string filename, int* height, int* widt
 {
     currentImage = currentImage.convertToFormat(QImage::Format_Grayscale8);
 
-    //int range = width * height;
+    int range = (*width) * (*height);
+    
+    for (int j = 0; j < *height; j++) { // row
+        for (int i = 0; i < *width; i++) {  // column
+            int k = j * (*width) + i; // index
+            int qt_y = ((*height) - 1) - j; // lower left to upper left (flipping)
+            int qt_x = i;
+            int pixel = qGray(currentImage.pixel(qt_x, qt_y)); // get grayscale intensity
+            u[k] = pixel;
+        }
+    }
+
+    pixmapItem->setPixmap(QPixmap::fromImage(currentImage));
+    ui.graphicsView->fitInView(pixmapItem, Qt::KeepAspectRatio); //formating
 }
 
-void Laplace_image::RandomlyRemove(int* Mask, double* u, int range, int p)
+void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
 {
     int n = range * p / 100;
 
     //If p > 50, we kipping heigth*width-n pixels
-
     if (p >= 50) {
         int s = 0;
-        while (s, (range - n)) {
+        while (s < (range - n)) {
             //Generate a random number in the range [0, heigth*width-1]
             std::uniform_int_distribution<int> dist(0, range - 1);
             int keep = dist(rng);
 
             //Selection for the first time
             if (Mask[keep] == 3) {
-                Mask[keep] == 1;
+                Mask[keep] = 1;
                 s += 1;
             }
         }
@@ -48,12 +62,12 @@ void Laplace_image::RandomlyRemove(int* Mask, double* u, int range, int p)
     }
     else if (p < 50) {
         int s = 0;
-        while (s, n) {
+        while (s < n) {
             std::uniform_int_distribution<int> dist(0, range - 1);
             int keep = dist(rng);
 
             if (Mask[keep] == 3) {
-                Mask[keep] == 0;
+                Mask[keep] = 0;
                 s += 1;
             }
         }
@@ -64,11 +78,9 @@ void Laplace_image::RandomlyRemove(int* Mask, double* u, int range, int p)
             }
         }
     }
-
-
     
 }
-void Laplace_image::restoration(int* Mask, double* u, int height, int width)
+void Laplace_image::restore(int* Mask, double* u, int height, int width)
 {
     Eigen::SparseMatrix<double, Eigen::RowMajor> M(height * width, height * width);
     Eigen::VectorXd b = Eigen::VectorXd::Zero(height * width);
@@ -146,7 +158,7 @@ void Laplace_image::restoration(int* Mask, double* u, int height, int width)
                 M.insert(k, k - width) = -1.;
                 M.insert(k, k + width) = -1.;
                 M.insert(k, k - 1) = -1.;
-                M.insert(k, k - 1) = -1.;
+                M.insert(k, k + 1) = -1.;
             }
         }
         else
@@ -180,18 +192,43 @@ void Laplace_image::restoration(int* Mask, double* u, int height, int width)
 
 void Laplace_image::on_actionOpen_triggered()
 {
-    QString fileFilter = "Image data (*.bmp *.gif *.jpg *.jpeg *.png *.pbm *.pgm *.ppm *.xbm *.xpm);;All files (*)";
+    QString fileFilter = "Image data (*.jpg *.jpeg *.png *.pgm)";
     QString fileName = QFileDialog::getOpenFileName(this, "Load image", fileFilter);
-    if (fileName.isEmpty()) { return; }
+    if (fileName.isEmpty()) { 
+        QMessageBox::information(this, "Action Canceled", "No image was selected.");
+        return; 
+    }
 
-    //load();
+    if (!currentImage.load(fileName)) {
+        QMessageBox::critical(this, "Error", "Failed to load the image. The file might be corrupted or unsupported.");
+        return;
+    }
 
-    // ...
+    width = currentImage.width();
+    height = currentImage.height();
+    range = width * height;
+
+    u.resize(range);
+    Mask.resize(range);
+    std::fill(Mask.begin(), Mask.end(), 3); // initialize
+
+    load(u.data(), fileName.toStdString(), &height, &width);
+
+    QMessageBox::information(this, "Success", "Image successfully loaded and processed!");
 }
 void Laplace_image::on_actionSave_triggered()
 {
-    QString fileFilter = "Image data (*.bmp *.gif *.jpg *.jpeg *.png *.pbm *.pgm *.ppm *.xbm *.xpm);;All files (*)";
-    QString fileName = QFileDialog::getSaveFileName(this, "Save image", fileFilter);
+    //QString fileFilter = "Image data (*.jpg *.jpeg *.png *.pgm)";
+    //QString fileName = QFileDialog::getSaveFileName(this, "Save image", fileFilter);
     // ...
+}
+void Laplace_image::on_tbRemove_clicked()
+{
+    int percent = ui.sbPercent->value();
+    randomlyRemove(Mask.data(), u.data(), range, percent);
+}
+void Laplace_image::on_tbRestore_clicked()
+{
+    restore(Mask.data(), u.data(), height, width);
 }
 
