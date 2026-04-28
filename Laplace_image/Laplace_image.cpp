@@ -18,19 +18,33 @@ Laplace_image::~Laplace_image()
 
 static std::mt19937 rng(std::random_device{}());
 
-void Laplace_image::load(double* u, std::string filename, int* height, int* width)
+void Laplace_image::load(double* u, std::string filename, int* height, int* width, ProcessMode processMode)
 {
-    currentImage = currentImage.convertToFormat(QImage::Format_Grayscale8);
+    if (processMode == Gray)
+        currentImage = currentImage.convertToFormat(QImage::Format_Grayscale8);
+    else
+        currentImage = currentImage.convertToFormat(QImage::Format_RGB32);
 
     int range = (*width) * (*height);
     
     for (int j = 0; j < *height; j++) { // row
         for (int i = 0; i < *width; i++) {  // column
             int k = j * (*width) + i; // index
-            int qt_y = ((*height) - 1) - j; // lower left to upper left (flipping)
+            int qt_y = ((*height) - 1) - j; //lower left to upper left (flipping)
             int qt_x = i;
-            int pixel = qGray(currentImage.pixel(qt_x, qt_y)); // get grayscale intensity
-            u[k] = pixel;
+            int pixel;
+            if (processMode == Gray) {
+                pixel = qGray(currentImage.pixel(qt_x, qt_y)); //get grayscale intensity
+                u[k] = pixel;
+            }
+            else {
+                int r = qRed(currentImage.pixel(qt_x, qt_y));
+                int g = qGreen(currentImage.pixel(qt_x, qt_y));
+                int b = qBlue(currentImage.pixel(qt_x, qt_y));
+                u_R[k] = r;
+                u_G[k] = g;
+                u_B[k] = b;
+            }
         }
     }
 
@@ -40,7 +54,7 @@ void Laplace_image::load(double* u, std::string filename, int* height, int* widt
 
 void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
 {
-    int n = range * p / 100; // number of pixels to DAMAGE
+    int n = range * p / 100; //number of pixels to DAMAGE
     std::uniform_int_distribution<int> dist(0, range - 1); //generate a random number in this range
 
     //If p > 50, we kipping heigth*width-n pixels
@@ -81,11 +95,18 @@ void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
     }
     
 }
-void Laplace_image::restore(int* Mask, double* u, int height, int width)
+void Laplace_image::restore(int* Mask, double* u, int height, int width, ProcessMode processMode)
 {
     Eigen::SparseMatrix<double> M(height * width, height * width); //column major as the default
     Eigen::VectorXd b = Eigen::VectorXd::Zero(height * width);
     Eigen::VectorXd xs(height * width);
+
+    Eigen::VectorXd b_R = Eigen::VectorXd::Zero(height * width);
+    Eigen::VectorXd b_G = Eigen::VectorXd::Zero(height * width);
+    Eigen::VectorXd b_B = Eigen::VectorXd::Zero(height * width);
+    Eigen::VectorXd xs_R(height * width);
+    Eigen::VectorXd xs_G(height * width);
+    Eigen::VectorXd xs_B(height * width);
 
     //Expect 5 non-zeros values for every row
     M.reserve(Eigen::VectorXi::Constant(height * width, 5));
@@ -165,30 +186,47 @@ void Laplace_image::restore(int* Mask, double* u, int height, int width)
         else
         {
             M.insert(k, k) = 1.;
-            b(k) = u[k];
+            if (processMode == RGB) {
+                b_R(k) = u_R[k];
+                b_G(k) = u_G[k];
+                b_B(k) = u_B[k];
+            }
+            else b(k) = u[k];
         }
     }
 
     //Solve the system
     M.makeCompressed();
-    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver; //requires a column-major matrix
-    solver.analyzePattern(M);
-    solver.factorize(M);
+    Eigen::BiCGSTAB<Eigen::SparseMatrix<double>, Eigen::IncompleteLUT<double>> solver;
+    solver.setTolerance(1e-8); //standart
+    solver.setMaxIterations(height * width);
+    solver.compute(M);
+    //BiCGSTAB handles non-symmetric matrices fine
+    //The IncompleteLUT preconditioner is what makes it converge fast for Poisson-style problems — without a preconditioner it would crawl
 
     if (solver.info() != Eigen::Success) {
-        std::cout << "Error in factorization of matrix" << std::endl;
+        std::cout << "Error in solver setup" << std::endl;
         return;
     }
-
-    xs = solver.solve(b);
-
-    if (solver.info() != Eigen::Success) {
-        std::cout << "Error in solver" << std::endl;
+    if (processMode == RGB) {
+        xs_R = solver.solve(b_R);
+        xs_G = solver.solve(b_G);
+        xs_B = solver.solve(b_B);
+        std::cout << "Iterations: " << solver.iterations() << " error: " << solver.error() << std::endl;
+        for (int i = 0; i < height * width; i++) {
+            u_R[i] = xs_R[i];
+            u_G[i] = xs_G[i];
+            u_B[i] = xs_B[i];
+        }
     }
-
-    for (int i = 0; i < height * width; i++) {
-        u[i] = xs[i];
+    else {
+        xs = solver.solve(b);
+        std::cout << "Iterations: " << solver.iterations() << " error: " << solver.error() << std::endl;
+        for (int i = 0; i < height * width; i++) {
+            u[i] = xs[i];
+        }
     }
+    
 }
 
 void Laplace_image::refreshDisplay()
@@ -197,8 +235,16 @@ void Laplace_image::refreshDisplay()
         for (int i = 0; i < width; ++i) {
             int k = j * width + i;
             int qt_y = (height - 1) - j;
-            int v = std::clamp(static_cast<int>(std::round(u[k])), 0, 255);
-            currentImage.setPixel(i, qt_y, qRgb(v, v, v));
+            if (mode == RGB) {
+                int r = std::clamp(int(std::round(u_R[k])), 0, 255);
+                int g = std::clamp(int(std::round(u_G[k])), 0, 255);
+                int b = std::clamp(int(std::round(u_B[k])), 0, 255);
+                currentImage.setPixel(i, qt_y, qRgb(r, g, b));
+            }
+            else {
+                int v = std::clamp(static_cast<int>(std::round(u[k])), 0, 255);
+                currentImage.setPixel(i, qt_y, qRgb(v, v, v));
+            }
         }
     }
     pixmapItem->setPixmap(QPixmap::fromImage(currentImage));
@@ -206,6 +252,15 @@ void Laplace_image::refreshDisplay()
 
 void Laplace_image::on_actionOpen_triggered()
 {
+    QMessageBox msgBox;
+    msgBox.setText("Select processing mode: ");
+    QPushButton* rgbButton = msgBox.addButton("Color (RGB)", QMessageBox::ActionRole);
+    QPushButton* bwButton = msgBox.addButton("Black and white", QMessageBox::ActionRole);
+    msgBox.exec();
+
+    if (msgBox.clickedButton() == rgbButton) mode = RGB;
+    else mode = Gray;
+
     QString fileFilter = "Image data (*.jpg *.jpeg *.png *.pgm)";
     QString fileName = QFileDialog::getOpenFileName(this, "Load image", "", fileFilter);
     if (fileName.isEmpty()) { 
@@ -217,16 +272,20 @@ void Laplace_image::on_actionOpen_triggered()
         QMessageBox::critical(this, "Error", "Failed to load the image. The file might be corrupted or unsupported.");
         return;
     }
+    originalImage = currentImage;
 
     width = currentImage.width();
     height = currentImage.height();
     range = width * height;
 
     u.resize(range);
+    u_R.resize(range);
+    u_G.resize(range);
+    u_B.resize(range);
     Mask.resize(range);
     std::fill(Mask.begin(), Mask.end(), 3); // initialize
 
-    load(u.data(), fileName.toStdString(), &height, &width);
+    load(u.data(), fileName.toStdString(), &height, &width, mode);
 
     QMessageBox::information(this, "Success", "Image successfully loaded and processed!");
     ui.tbRemove->setEnabled(true);
@@ -234,27 +293,56 @@ void Laplace_image::on_actionOpen_triggered()
 }
 void Laplace_image::on_actionSave_triggered()
 {
-    //QString fileFilter = "Image data (*.jpg *.jpeg *.png *.pgm)";
-    //QString fileName = QFileDialog::getSaveFileName(this, "Save image", fileFilter);
-    // ...
+    if (currentImage.isNull()) {
+        QMessageBox::warning(this, "Action Canceled", "No image was selected.");
+        return;
+    }
+
+    QString fileFilter = "PNG Image (*.png);;JPG Image (*.jpg);;BMP Image (*.bmp);;All Files (*)";
+    QString fileName = QFileDialog::getSaveFileName(this, "Save Image", "", fileFilter);
+
+    if (fileName.isEmpty()) {
+        return;
+    }
+
+    if (currentImage.save(fileName)) {
+        QMessageBox::information(this, "Success", "Image successfully saved and processed!");
+    }
+    else {
+        QMessageBox::critical(this, "Error", "Cannot save file");
+    }
 }
 void Laplace_image::on_tbRemove_clicked()
 {
     ui.tbRestore->setEnabled(true);
+    currentImage = originalImage;
 
     // Reload original pixels and reset the mask before damaging again
-    load(u.data(), "", &height, &width);
+    load(u.data(), "", &height, &width, mode);
     std::fill(Mask.begin(), Mask.end(), 3);
 
     int percent = ui.sbPercent->value();
     randomlyRemove(Mask.data(), u.data(), range, percent);
+
+    if (mode == RGB) {
+        for (int k = 0; k < range; ++k) {
+            if (Mask[k] == 0) {
+                u_R[k] = 0.;
+                u_G[k] = 0.;
+                u_B[k] = 0.;
+            }
+        }
+    }
+
     refreshDisplay();
 }
 void Laplace_image::on_tbRestore_clicked()
 {
     ui.tbRemove->setEnabled(true);
 
-    restore(Mask.data(), u.data(), height, width);
+    restore(Mask.data(), u.data(), height, width, mode);
+
+
     refreshDisplay();
 }
 

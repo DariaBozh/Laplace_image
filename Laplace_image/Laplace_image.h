@@ -7,7 +7,10 @@
 #include <random>
 #include <Eigen/Sparse>
 #include <Eigen/SparseLU>
+#include <Eigen/IterativeLinearSolvers>
 #include <Eigen/Dense>
+
+enum ProcessMode { Gray, RGB };
 
 class Laplace_image : public QMainWindow
 {
@@ -17,10 +20,10 @@ public:
     Laplace_image(QWidget *parent = nullptr);
     ~Laplace_image();
 
-    void load(double* u, std::string filename, int* height, int* width);
-    void randomlyRemove(int* Mask, double* u, int range, int p);
+    void load(double* u, std::string filename, int* height, int* width, ProcessMode processMode);
 
-    void restore(int* Mask, double* u, int height, int width);
+    void randomlyRemove(int* Mask, double* u, int range, int p);
+    void restore(int* Mask, double* u, int height, int width, ProcessMode processMode);
 
     void refreshDisplay();
 
@@ -28,6 +31,7 @@ private:
     Ui::Laplace_imageClass ui;
 
     QGraphicsScene* scene;
+    QImage originalImage;
     QImage currentImage; //calculations (bytes)
     QGraphicsPixmapItem* pixmapItem; //rendering
 
@@ -36,7 +40,10 @@ private:
     int range = 0; // height*width
 
     std::vector<double> u;
+    std::vector<double> u_R, u_G, u_B;
     std::vector<int> Mask;
+
+    ProcessMode mode;
 
 public slots:
     void on_actionOpen_triggered();
