@@ -20,6 +20,8 @@ static std::mt19937 rng(std::random_device{}());
 
 void Laplace_image::load(double* u, std::string filename, int* height, int* width, ProcessMode processMode)
 {
+    this->mode = processMode;
+
     if (processMode == Gray)
         currentImage = currentImage.convertToFormat(QImage::Format_Grayscale8);
     else
@@ -57,9 +59,10 @@ void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
     int n = range * p / 100; //number of pixels to DAMAGE
     std::uniform_int_distribution<int> dist(0, range - 1); //generate a random number in this range
 
+    int s = 0;
+
     //If p > 50, we kipping heigth*width-n pixels
     if (p >= 50) {
-        int s = 0;
         while (s < range - n) {
             int keep = dist(rng);
 
@@ -77,7 +80,6 @@ void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
         }
     }
     else if (p < 50) {
-        int s = 0;
         while (s < n) {
             int keep = dist(rng);
 
@@ -93,6 +95,8 @@ void Laplace_image::randomlyRemove(int* Mask, double* u, int range, int p)
             }
         }
     }
+
+	qDebug() << "Pixels to damage: " << n << ", pixels to save: "<< s << "\nOut of " << range;
     
 }
 void Laplace_image::restore(int* Mask, double* u, int height, int width, ProcessMode processMode)
@@ -122,61 +126,54 @@ void Laplace_image::restore(int* Mask, double* u, int height, int width, Process
         int j = k % width;
 
         if (Mask[k] == 0) {
+            M.insert(k, k) = 4.;
+
             //corner (0,0) bottom left
             if (i == 0 && j == 0) {
-                M.insert(k, k) = 4.;
                 M.insert(k, k + width) = -2.;
                 M.insert(k, k + 1) = -2.;
             }
             //corner (0,w-1) bottom right
             else if (i == 0 && j == width - 1) {
-                M.insert(k, k) = 4.;
                 M.insert(k, k + width) = -2.;
                 M.insert(k, k - 1) = -2.;
             }
             //corner (h-1,0) top left
             else if (i == height - 1 && j == 0) {
-                M.insert(k, k) = 4.;
                 M.insert(k, k - width) = -2.;
                 M.insert(k, k + 1) = -2.;
             }
             //corner (h-1, w-1) top right
             else if (i == height - 1 && j == width - 1) {
-                M.insert(k, k) = 4.;
                 M.insert(k, k - width) = -2.;
                 M.insert(k, k - 1) = -2.;
             }
             //top edge
             else if (i == height - 1 && j >= 1 && j <= width - 2) {
-                M.insert(k, k) = 4.;
                 M.insert(k, k - width) = -2.;
                 M.insert(k, k + 1) = -1.;
                 M.insert(k, k - 1) = -1.;
             }
             //right edge
             else if (i >= 1 && i <= height - 2 && j == width - 1) {
-                M.insert(k, k) = 4.;
                 M.insert(k, k - width) = -1.;
                 M.insert(k, k + width) = -1.;
                 M.insert(k, k - 1) = -2.;
             }
             //left edge
             else if (i >= 1 && i <= height - 2 && j == 0) {
-                M.insert(k, k) = 4.;
                 M.insert(k, k - width) = -1.;
                 M.insert(k, k + width) = -1.;
                 M.insert(k, k + 1) = -2.;
             }
             //bottom edge
             else if (i == 0 && j >= 1 && j <= width - 2) {
-                M.insert(k, k) = 4.;
                 M.insert(k, k + width) = -2.;
                 M.insert(k, k + 1) = -1.;
                 M.insert(k, k - 1) = -1.;
             }
             //inside the domain
             else {
-                M.insert(k, k) = 4.;
                 M.insert(k, k - width) = -1.;
                 M.insert(k, k + width) = -1.;
                 M.insert(k, k - 1) = -1.;
@@ -229,21 +226,147 @@ void Laplace_image::restore(int* Mask, double* u, int height, int width, Process
     
 }
 
+void Laplace_image::smooth(ProcessMode processMode)
+{
+    std::cout << "Hi from smooth!"  << std::endl;
+
+    double lambda = ui.dsbSmoothLambda->value(); //менша-б≥льше розмаже
+
+    Eigen::SparseMatrix<double> M(range, range); //column major as the default
+    Eigen::VectorXd b = Eigen::VectorXd::Zero(height * width);
+    Eigen::VectorXd xs(range);
+
+    Eigen::VectorXd b_R = Eigen::VectorXd::Zero(range);
+    Eigen::VectorXd b_G = Eigen::VectorXd::Zero(range);
+    Eigen::VectorXd b_B = Eigen::VectorXd::Zero(range);
+    Eigen::VectorXd xs_R(range);
+    Eigen::VectorXd xs_G(range);
+    Eigen::VectorXd xs_B(range);
+    M.reserve(Eigen::VectorXi::Constant(range, 5));
+
+    //Construct the matrix
+    for (int k = 0; k < height * width; k++)
+    {
+        int i = k / width;
+        int j = k % width;
+
+        //Fidality term: diagonal value + lambda
+        M.insert(k, k) = 4 + lambda;
+
+        if (processMode == RGB) {
+            b_R(k) = lambda * u_R[k];
+            b_G(k) = lambda * u_G[k];
+            b_B(k) = lambda * u_B[k];
+        }
+        else b(k) = lambda * u[k]; //u0 - restored image
+
+        //Smoothing term and mirroring
+        //corner (0,0) bottom left
+        if (i == 0 && j == 0) {
+            M.insert(k, k + width) = -2.;
+            M.insert(k, k + 1) = -2.;
+        }
+        //corner (0,w-1) bottom right
+        else if (i == 0 && j == width - 1) {
+            M.insert(k, k + width) = -2.;
+            M.insert(k, k - 1) = -2.;
+        }
+        //corner (h-1,0) top left
+        else if (i == height - 1 && j == 0) {
+            M.insert(k, k - width) = -2.;
+            M.insert(k, k + 1) = -2.;
+        }
+        //corner (h-1, w-1) top right
+        else if (i == height - 1 && j == width - 1) {
+            M.insert(k, k - width) = -2.;
+            M.insert(k, k - 1) = -2.;
+        }
+        //top edge
+        else if (i == height - 1 && j >= 1 && j <= width - 2) {
+            M.insert(k, k - width) = -2.;
+            M.insert(k, k + 1) = -1.;
+            M.insert(k, k - 1) = -1.;
+        }
+        //right edge
+        else if (i >= 1 && i <= height - 2 && j == width - 1) {
+            M.insert(k, k - width) = -1.;
+            M.insert(k, k + width) = -1.;
+            M.insert(k, k - 1) = -2.;
+        }
+        //left edge
+        else if (i >= 1 && i <= height - 2 && j == 0) {
+            M.insert(k, k - width) = -1.;
+            M.insert(k, k + width) = -1.;
+            M.insert(k, k + 1) = -2.;
+        }
+        //bottom edge
+        else if (i == 0 && j >= 1 && j <= width - 2) {
+            M.insert(k, k + width) = -2.;
+            M.insert(k, k + 1) = -1.;
+            M.insert(k, k - 1) = -1.;
+        }
+        //inside the domain
+        else {
+            M.insert(k, k - width) = -1.;
+            M.insert(k, k + width) = -1.;
+            M.insert(k, k - 1) = -1.;
+            M.insert(k, k + 1) = -1.;
+        }
+    }
+
+    //Solve the system
+    M.makeCompressed();
+    Eigen::BiCGSTAB<Eigen::SparseMatrix<double>, Eigen::IncompleteLUT<double>> solver;
+    solver.setTolerance(1e-8); //standart
+    solver.setMaxIterations(height * width);
+    solver.compute(M);
+    //BiCGSTAB handles non-symmetric matrices fine
+    //The IncompleteLUT preconditioner is what makes it converge fast for Poisson-style problems Ч without a preconditioner it would crawl
+
+    if (solver.info() != Eigen::Success) {
+        std::cout << "Error in solver setup" << std::endl;
+        return;
+    }
+    if (processMode == RGB) {
+        xs_R = solver.solve(b_R);
+        xs_G = solver.solve(b_G);
+        xs_B = solver.solve(b_B);
+        std::cout << "Iterations: " << solver.iterations() << " error: " << solver.error() << std::endl;
+        for (int i = 0; i < height * width; i++) {
+            u_R[i] = xs_R[i];
+            u_G[i] = xs_G[i];
+            u_B[i] = xs_B[i];
+        }
+    }
+    else {
+        xs = solver.solve(b);
+        std::cout << "Iterations: " << solver.iterations() << " error: " << solver.error() << std::endl;
+        for (int i = 0; i < height * width; i++) {
+            u[i] = xs[i];
+        }
+    }
+    QMessageBox::information(this, "Success", "The image was smoothed");
+
+}
+
 void Laplace_image::refreshDisplay()
 {
     for (int j = 0; j < height; ++j) {
         for (int i = 0; i < width; ++i) {
             int k = j * width + i;
+
+            int qt_x = i;
             int qt_y = (height - 1) - j;
+
             if (mode == RGB) {
                 int r = std::clamp(int(std::round(u_R[k])), 0, 255);
                 int g = std::clamp(int(std::round(u_G[k])), 0, 255);
                 int b = std::clamp(int(std::round(u_B[k])), 0, 255);
-                currentImage.setPixel(i, qt_y, qRgb(r, g, b));
+                currentImage.setPixel(qt_x, qt_y, qRgb(r, g, b));
             }
             else {
                 int v = std::clamp(static_cast<int>(std::round(u[k])), 0, 255);
-                currentImage.setPixel(i, qt_y, qRgb(v, v, v));
+                currentImage.setPixel(qt_x, qt_y, qRgb(v, v, v));
             }
         }
     }
@@ -282,6 +405,7 @@ void Laplace_image::on_actionOpen_triggered()
     u_R.resize(range);
     u_G.resize(range);
     u_B.resize(range);
+
     Mask.resize(range);
     std::fill(Mask.begin(), Mask.end(), 3); // initialize
 
@@ -341,8 +465,16 @@ void Laplace_image::on_tbRestore_clicked()
     ui.tbRemove->setEnabled(true);
 
     restore(Mask.data(), u.data(), height, width, mode);
+    refreshDisplay();
+}
 
+void Laplace_image::on_tbSmooth_clicked()
+{
+    std::cout << "Hi from public slot!" << std::endl;
 
+    if (range == 0) return; 
+
+    smooth(this->mode);
     refreshDisplay();
 }
 

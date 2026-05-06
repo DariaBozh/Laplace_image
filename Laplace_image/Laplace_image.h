@@ -24,6 +24,7 @@ public:
 
     void randomlyRemove(int* Mask, double* u, int range, int p);
     void restore(int* Mask, double* u, int height, int width, ProcessMode processMode);
+    void smooth(ProcessMode processMode);
 
     void refreshDisplay();
 
@@ -31,16 +32,18 @@ private:
     Ui::Laplace_imageClass ui;
 
     QGraphicsScene* scene;
-    QImage originalImage;
-    QImage currentImage; //calculations (bytes)
     QGraphicsPixmapItem* pixmapItem; //rendering
 
+    QImage originalImage;
+    QImage currentImage; //calculations (bytes)
+    
     int height = 0;
     int width = 0;
     int range = 0; // height*width
 
-    std::vector<double> u;
+    std::vector<double> u; //black-white
     std::vector<double> u_R, u_G, u_B;
+
     std::vector<int> Mask;
 
     ProcessMode mode;
@@ -50,4 +53,5 @@ public slots:
     void on_actionSave_triggered();
     void on_tbRemove_clicked();
     void on_tbRestore_clicked();
+    void on_tbSmooth_clicked();
 };

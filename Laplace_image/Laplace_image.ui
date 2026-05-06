@@ -58,6 +58,30 @@
             </property>
            </widget>
           </item>
+          <item>
+           <widget class="QLabel" name="label_2">
+            <property name="text">
+             <string>Aka bude lambda?</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="dsbSmoothLambda">
+            <property name="minimum">
+             <double>0.010000000000000</double>
+            </property>
+            <property name="maximum">
+             <double>1000.000000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QToolButton" name="tbSmooth">
+            <property name="text">
+             <string>Vyhladitt</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>
