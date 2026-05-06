@@ -6,6 +6,15 @@
 ## Local library
 include/eigen-5.0.0/
 
+Smaller.jpg
+black_rectangle.jpg
+damaged.png
+photo_RGB.jpg
+photo_RGB_compressed.jpg
+photo_RGB_compresseed1.jpg
+repared.png
+snall.jpg
+
 # User-specific files
 *.rsuser
 *.suo
